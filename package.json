@@ -1,6 +1,6 @@
 {
   "name": "@a1liu/event-system",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "An event sourcing implementation",
   "author": "Albert Liu <albertymliu@gmail.com>",
   "license": "MIT",
