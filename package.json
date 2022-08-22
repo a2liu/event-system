@@ -19,9 +19,5 @@
   },
   "devDependencies": {
     "typescript": "4.7.4"
-  },
-  "exports": {
-    ".": "dist/index.js",
-    "./lib": "dist/schema.js"
   }
 }
