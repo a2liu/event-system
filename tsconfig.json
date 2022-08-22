@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    "target": "es6",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -8,14 +8,16 @@
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "outDir": "./dist",
-    "module": "esnext",
+    "module": "commonjs",
     "declaration": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
+    "importHelpers": false,
     "isolatedModules": true,
+    "esModuleInterop": true,
     "jsx": "preserve",
     "incremental": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "dist"]
 }
