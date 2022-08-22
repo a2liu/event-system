@@ -2,11 +2,18 @@
   "name": "@a1liu/event-system",
   "version": "0.0.1",
   "description": "An event sourcing implementation",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "author": "Albert Liu <albertymliu@gmail.com>",
   "license": "MIT",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "ts-postgres": "1.2.1",
     "zod": "3.18.0"
+  },
+  "devDependencies": {
+    "typescript": "4.7.4"
   }
 }

@@ -1,3 +1,5 @@
+import { DataType, AnyJson } from "ts-postgres";
+
 export type SchemaType = {
   [key: string]: Record<string, DataType>;
   events: {

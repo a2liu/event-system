@@ -1,4 +1,4 @@
-import { DataType, Client, Query, AnyJson } from "ts-postgres";
+import { Client } from "ts-postgres";
 import {SchemaType, Translator, processSchema} from './schema';
 import { z } from "zod";
 
