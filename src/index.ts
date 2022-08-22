@@ -1,2 +1,1 @@
-export { eventSourcing } from './event';
-export type { ESEvent } from './event';
+export * from "./event";

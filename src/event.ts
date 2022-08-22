@@ -1,17 +1,85 @@
 import { Client } from "ts-postgres";
-import {SchemaType, Translator, processSchema} from './schema';
+import { SchemaType, Translator, processSchema } from "./schema";
 import { z } from "zod";
+
+export type TableName<Schema extends SchemaType> = Exclude<
+  keyof Schema,
+  "events"
+>;
+export type SchemaRow<
+  Schema extends SchemaType,
+  Name extends TableName<Schema>
+> = {
+  [key in keyof Schema[Name]]: Translator[Schema[Name][key]];
+};
+
+export type Mutator<Schema extends SchemaType> = {
+  [key: string]: { table: TableName<Schema>; id: string };
+};
+
+export type MutatorData<
+  Schema extends SchemaType,
+  T extends Mutator<Schema>
+> = {
+  [key in keyof T]?: SchemaRow<Schema, T[key]["table"]> & { id: string };
+};
+
+export type CommandBase<
+  Schema extends SchemaType,
+  Input,
+  T extends Mutator<Schema>
+> = {
+  name: string;
+  input: z.ZodType<Input>;
+  mutator: (input: Input) => T;
+};
+
+export type CreatorCommand<
+  Schema extends SchemaType,
+  Input,
+  T extends Mutator<Schema>
+> = CommandBase<Schema, Input, T> & {
+  validate: (
+    client: Client,
+    input: Input,
+    mutator: MutatorData<Schema, T>
+  ) => Promise<void>;
+};
+
+export type UpdaterCommand<
+  Schema extends SchemaType,
+  Input,
+  T extends Mutator<Schema>
+> = CommandBase<Schema, Input, T> & {
+  validate: (
+    client: Client,
+    input: Input,
+    mutator: MutatorData<Schema, T>
+  ) => Promise<string>;
+};
+
+export type DispatchCommand<
+  Schema extends SchemaType,
+  Input,
+  T extends Mutator<Schema>
+> = CommandBase<Schema, Input, T> & {
+  planActions: (
+    client: Client,
+    input: Input,
+    mutator: MutatorData<Schema, T>
+  ) => Promise<ESEvent[]>;
+};
 
 // Instead of declaring really complicated types for everything,
 // we use symbols to validate that the data we're getting is correct, and
 // then otherwise use raw types like `any`.
 const _event_name: unique symbol = Symbol("event-name");
 
-type EventInfo = {
+export type EventInfo = {
   name: string;
 };
 
-type CreationEvent = {
+export type CreationEvent = {
   [_event_name]: string;
 
   kind: "create";
@@ -19,7 +87,7 @@ type CreationEvent = {
   data: any;
 };
 
-type ModificationEvent = {
+export type ModificationEvent = {
   [_event_name]: string;
 
   kind: "modify";
@@ -29,6 +97,58 @@ type ModificationEvent = {
 };
 
 export type ESEvent = CreationEvent | ModificationEvent | undefined;
+
+export type CreateInfo<
+  Schema extends SchemaType,
+  Data extends object
+> = EventInfo & {
+  kind: "create";
+  event(data: Data & { table: keyof Schema }): CreationEvent;
+};
+
+export type CreateInfoD<
+  Schema extends SchemaType,
+  Data extends object
+> = EventInfo & {
+  kind: "create";
+  table: TableName<Schema>;
+  event(data: Data): CreationEvent;
+};
+
+export type ModifyInfo<
+  Schema extends SchemaType,
+  Data extends object
+> = EventInfo & {
+  kind: "modify";
+  event(id: string, data: Data & { table: keyof Schema }): ModificationEvent;
+};
+
+export type ModifyInfoD<
+  Schema extends SchemaType,
+  Data extends object
+> = EventInfo & {
+  kind: "modify";
+  table: TableName<Schema>;
+  event(id: string, data: Data): ModificationEvent;
+};
+
+export type Reducer<
+  Schema extends SchemaType,
+  Table extends TableName<Schema>
+> = {
+  creator<Data extends object>(
+    eventInfo: CreateInfo<Schema, Data>,
+    creator: (data: Data) => SchemaRow<Schema, Table>
+  ): void;
+
+  updater<Data extends object>(
+    eventInfo: ModifyInfo<Schema, Data>,
+    updater: (
+      previous: SchemaRow<Schema, Table>,
+      data: Data
+    ) => Partial<SchemaRow<Schema, Table>>
+  ): void;
+};
 
 // NOTE: using a prepared statement here causes a crash.
 const addEvent = `
@@ -47,6 +167,9 @@ const selectEvents = `
 `;
 
 export function eventSourcing<Schema extends SchemaType>(schema: Schema) {
+  type Mut = Mutator<Schema>;
+  type TName = TableName<Schema>;
+
   const {
     namesForTable,
     selectUpdateForTable,
@@ -57,102 +180,39 @@ export function eventSourcing<Schema extends SchemaType>(schema: Schema) {
   const reducers: Record<string, Record<string, any>> = {};
   const commandNames: Record<string, true> = {};
 
-  type TName = Exclude<keyof Schema, "events">;
-  type SchemaRow<Name extends TName> = {
-    [key in keyof Schema[Name]]: Translator[Schema[Name][key]];
-  };
-
-  type Mutator = { [key: string]: { table: TName; id: string } };
-
-  type MutatorData<T extends Mutator> = {
-    [key in keyof T]?: SchemaRow<T[key]["table"]> & { id: string };
-  };
-
-  type CommandBase<Input, T extends Mutator> = {
-    name: string;
-    input: z.ZodType<Input>;
-    mutator: (input: Input) => T;
-  };
-
-  type CreatorCommand<Input, T extends Mutator> = CommandBase<Input, T> & {
-    validate: (
-      client: Client,
-      input: Input,
-      mutator: MutatorData<T>
-    ) => Promise<void>;
-  };
-
-  type UpdaterCommand<Input, T extends Mutator> = CommandBase<Input, T> & {
-    validate: (
-      client: Client,
-      input: Input,
-      mutator: MutatorData<T>
-    ) => Promise<string>;
-  };
-
-  type DispatchCommand<Input, T extends Mutator> = CommandBase<Input, T> & {
-    planActions: (
-      client: Client,
-      input: Input,
-      mutator: MutatorData<T>
-    ) => Promise<ESEvent[]>;
-  };
-
-  type CreateInfo<Data extends object> = EventInfo & {
-    kind: "create";
-    event(data: Data & { table: keyof Schema }): CreationEvent;
-  };
-
-  type CreateInfoD<Data extends object> = EventInfo & {
-    kind: "create";
-    table: TName;
-    event(data: Data): CreationEvent;
-  };
-
-  type ModifyInfo<Data extends object> = EventInfo & {
-    kind: "modify";
-    event(id: string, data: Data & { table: keyof Schema }): ModificationEvent;
-  };
-
-  type ModifyInfoD<Data extends object> = EventInfo & {
-    kind: "modify";
-    table: TName;
-    event(id: string, data: Data): ModificationEvent;
-  };
-
-  function createCommand<Input, T extends Mutator>(
-    command: DispatchCommand<Input, T>
-  ): DispatchCommand<Input, T>;
+  function createCommand<Input, T extends Mut>(
+    command: DispatchCommand<Schema, Input, T>
+  ): DispatchCommand<Schema, Input, T>;
 
   function createCommand<
     Table extends TName,
     Input extends object,
-    T extends Mutator
+    T extends Mut
   >(
-    command: CreatorCommand<Input, T> & { kind: "create" }
-  ): DispatchCommand<Input, T> & CreateInfo<Input>;
+    command: CreatorCommand<Schema, Input, T> & { kind: "create" }
+  ): DispatchCommand<Schema, Input, T> & CreateInfo<Schema, Input>;
   function createCommand<
     Table extends TName,
     Input extends object,
-    T extends Mutator
+    T extends Mut
   >(
-    command: CreatorCommand<Input, T> & { kind: "create"; table: Table }
-  ): DispatchCommand<Input, T> & CreateInfoD<Input>;
+    command: CreatorCommand<Schema, Input, T> & { kind: "create"; table: Table }
+  ): DispatchCommand<Schema, Input, T> & CreateInfoD<Schema, Input>;
 
   function createCommand<
     Table extends TName,
     Input extends object,
-    T extends Mutator
+    T extends Mut
   >(
-    command: UpdaterCommand<Input, T> & { kind: "modify" }
-  ): DispatchCommand<Input, T> & ModifyInfo<Input>;
+    command: UpdaterCommand<Schema, Input, T> & { kind: "modify" }
+  ): DispatchCommand<Schema, Input, T> & ModifyInfo<Schema, Input>;
   function createCommand<
     Table extends TName,
     Input extends object,
-    T extends Mutator
+    T extends Mut
   >(
-    command: UpdaterCommand<Input, T> & { kind: "modify"; table: Table }
-  ): DispatchCommand<Input, T> & ModifyInfoD<Input>;
+    command: UpdaterCommand<Schema, Input, T> & { kind: "modify"; table: Table }
+  ): DispatchCommand<Schema, Input, T> & ModifyInfoD<Schema, Input>;
 
   function createCommand(command: any): any {
     const { name, kind, validate, table: commandTable } = command;
@@ -231,39 +291,49 @@ export function eventSourcing<Schema extends SchemaType>(schema: Schema) {
     reducers[table]![name] = reducer;
   }
 
-  class Reducer<Table extends TName> {
+  class ReducerObject<Table extends TName> {
     private readonly table: string;
     constructor(table: Table) {
       this.table = String(table);
     }
 
     creator<Data extends object>(
-      eventInfo: CreateInfo<Data>,
-      creator: (data: Data) => SchemaRow<Table>
-    ): void {
+      eventInfo: CreateInfo<Schema, Data>,
+      creator: (data: Data) => SchemaRow<Schema, Table>
+    ): Reducer<Schema, Table> {
       addReducer(this.table, eventInfo.name, {
         kind: "create",
         creator,
       });
+
+      return this;
     }
 
     updater<Data extends object>(
-      eventInfo: ModifyInfo<Data>,
+      eventInfo: ModifyInfo<Schema, Data>,
       updater: (
-        previous: SchemaRow<Table>,
+        previous: SchemaRow<Schema, Table>,
         data: Data
-      ) => Partial<SchemaRow<Table>>
-    ): void {
+      ) => Partial<SchemaRow<Schema, Table>>
+    ): Reducer<Schema, Table> {
       addReducer(this.table, eventInfo.name, {
         kind: "modify",
         updater,
       });
+
+      return this;
     }
+  }
+
+  function createReducer<Table extends TName>(
+    table: Table
+  ): Reducer<Schema, Table> {
+    return new ReducerObject(table);
   }
 
   async function runCommand<Input>(
     client: Client,
-    command: DispatchCommand<Input, any>,
+    command: DispatchCommand<Schema, Input, any>,
     input: Input,
     actorId: string
   ): Promise<void> {
@@ -273,7 +343,7 @@ export function eventSourcing<Schema extends SchemaType>(schema: Schema) {
     try {
       await client.query("begin");
 
-      const mutator: Mutator = command.mutator(input);
+      const mutator: Mut = command.mutator(input);
 
       const selectedObjects: any = {};
       const mutatorData: any = {};
@@ -390,7 +460,7 @@ export function eventSourcing<Schema extends SchemaType>(schema: Schema) {
     client: Client,
     table: Table,
     rowId: string
-  ): Promise<SchemaRow<Table>> {
+  ): Promise<SchemaRow<Schema, Table>> {
     try {
       await client.query("begin");
 
@@ -413,7 +483,7 @@ export function eventSourcing<Schema extends SchemaType>(schema: Schema) {
 
   return {
     createCommand,
-    Reducer,
+    createReducer,
     runCommand,
     reduceRow,
   };
