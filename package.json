@@ -1,0 +1,12 @@
+{
+  "name": "@a1liu/event-system",
+  "version": "0.0.1",
+  "description": "An event sourcing implementation",
+  "main": "src/index.ts",
+  "author": "Albert Liu <albertymliu@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "ts-postgres": "1.2.1",
+    "zod": "3.18.0"
+  }
+}
