@@ -1,6 +1,6 @@
 {
   "name": "@a1liu/event-system",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "An event sourcing implementation",
   "main": "dist/index.js",
   "author": "Albert Liu <albertymliu@gmail.com>",
